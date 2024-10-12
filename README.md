@@ -1,6 +1,24 @@
 # OpenAI Realtime API Voice Assistant
 
+**This is an upgraded version of the V1 repo: https://github.com/Barty-Bart/openai-realtime-api-voice-assistant**
+
 This project implements an AI-powered inbound call agent for Bart's Automotive, a fictional automotive business. It uses OpenAI's new realtime API and integrates with Twilio to handle incoming phone calls.
+
+## Upgrades
+
+This version now has:
+
+- RAG using OpenAI Assistants API
+- Function Calling
+- Caller History
+
+This version uses Make.com as the backend for processing all RAG and Function Calls. 
+
+This means that you can simply copy the main index.js file, paste it into your favourite AI tool (e.g., ChatGPT) and ask it to modify the function calls for you.
+
+And as a non-coder, you can now run all of your automations/ function calls within Make.com.
+
+This entire build was made for beginners! Hope you enjoy :)
 
 ## Features
 
@@ -23,8 +41,8 @@ This project implements an AI-powered inbound call agent for Bart's Automotive, 
 
 1. Clone the repository:
    ```
-   git clone https://github.com/Barty-Bart/openai-realtime-api-voice-assistant.git
-   cd openai-realtime-api-voice-assistant
+   git clone https://github.com/Barty-Bart/openai-realtime-api-voice-assistant-V2.git
+   cd openai-realtime-api-voice-assistant-V2
    ```
 
 2. Install dependencies:
