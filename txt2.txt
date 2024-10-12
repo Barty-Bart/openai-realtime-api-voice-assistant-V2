@@ -25,20 +25,31 @@ fastify.register(fastifyWs);
 // Constants
 const SYSTEM_MESSAGE = `
 ### Role
-You are an AI assistant named Sophie, working at Bart's Automotive. Your role is to answer customer questions about automotive services and repairs.
+You are an AI assistant named Sophie, working at Bart's Automotive. Your role is to answer customer questions and book services or repairs for their cars.
 ### Persona
 - You have been a receptionist at Bart's Automotive for over 5 years.
 - You are knowledgeable about both the company and cars in general.
 - Your tone is friendly, professional, and efficient.
 - You keep conversations focused and concise, bringing them back on topic if necessary.
 - You ask only one question at a time and respond promptly to avoid wasting the customer's time.
+### Services
+Bart's Automotive is a general-purpose mechanic shop. We service all makes and models, offering:
+- Routine service work
+- Brakes and suspension repairs
+- Tune-ups
+- And more
 ### Conversation Guidelines
 - Always be polite and maintain a medium-paced speaking style.
 - When the conversation veers off-topic, gently bring it back with a polite reminder.
+- For booking requests, gather the customer's name, availability, and the type of work they need.
 ### First Message
 The first message you receive from the customer is their name and a summary of their last call, repeat this exact message to the customer as the greeting.
 ### Handling FAQs
 Use the function \`question_and_answer\` to respond to common customer queries.
+### Booking Process
+When the customer wants to book a service:
+1. Gather their name, availability, and the type of service or repair they need.
+2. Use the \`book_service\` function to finalize the booking.
 `;
 
 const VOICE = 'alloy';
@@ -150,7 +161,6 @@ fastify.register(async (fastify) => {
         let streamSid = '';
         let openAiWsReady = false;
         let queuedFirstMessage = null;
-        let threadId = ""; // Initialize threadId here
 
         const sessionId = req.headers['x-twilio-call-sid'] || `session_${Date.now()}`;
         let session = sessions.get(sessionId) || { transcript: '', streamSid: null };
@@ -158,9 +168,10 @@ fastify.register(async (fastify) => {
 
         // Now, retrieve the callerNumber from the session object
         const callerNumber = session.callerNumber;
-        console.log('Caller Number:', callerNumber);
+        console.log('Caller Number:', callerNumber); // Now this will not throw an error
 
-        // Open OpenAI WebSocket connection
+
+        // Open OpenAI WebSocket connection immediately
         const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -182,34 +193,7 @@ fastify.register(async (fastify) => {
                     temperature: 0.8,
                     input_audio_transcription: {
                         "model": "whisper-1"
-                    },
-                    tools: [
-                        {
-                            type: "function",
-                            name: "question_and_answer",
-                            description: "Get answers to customer questions about automotive services and repairs",
-                            parameters: {
-                                type: "object",
-                                properties: {
-                                    "question": { "type": "string" }
-                                },
-                                required: ["question"]
-                            }
-                        },
-                        {
-                            type: "function",
-                            name: "book_tow",
-                            description: "Book a tow service for a customer",
-                            parameters: {
-                                type: "object",
-                                properties: {
-                                    "address": { "type": "string" }
-                                },
-                                required: ["address"]
-                            }
-                        }
-                    ],
-                    tool_choice: "auto"
+                    }
                 }
             };
 
@@ -230,7 +214,7 @@ fastify.register(async (fastify) => {
             console.log('Connected to the OpenAI Realtime API');
             openAiWsReady = true;
             sendSessionUpdate();
-            sendFirstMessage();
+            sendFirstMessage();  // Attempt to send queued message if it exists
         });
 
         // Handle incoming messages from Twilio (media-stream)
@@ -284,7 +268,7 @@ fastify.register(async (fastify) => {
         });
 
         // Handle OpenAI WebSocket messages
-        openAiWs.on('message', async (data) => {
+        openAiWs.on('message', (data) => {
             try {
                 const response = JSON.parse(data);
 
@@ -294,91 +278,6 @@ fastify.register(async (fastify) => {
                         streamSid: streamSid,
                         media: { payload: response.delta }
                     }));
-                }
-
-                // Handle function calling for question and answer, and book tow
-                if (response.type === 'response.function_call_arguments.done') {
-                    console.log("Function called:", response);
-                    const functionName = response.name;
-                    const args = JSON.parse(response.arguments);
-
-                    if (functionName === 'question_and_answer') {
-                        const question = args.question;
-                        try {
-                            const webhookResponse = await sendToWebhook({
-                                route: "3", // Route 3 for Q&A
-                                data1: question,
-                                data2: threadId
-                            });
-
-                            // Parse the webhook response
-                            const parsedResponse = JSON.parse(webhookResponse);
-                            const answerMessage = parsedResponse.message || "I'm sorry, I couldn't find an answer to that question.";
-
-                            // Update the threadId if it's provided in the response
-                            if (parsedResponse.thread) {
-                                threadId = parsedResponse.thread;
-                                console.log("Updated thread ID:", threadId);
-                            }
-
-                            const functionOutputEvent = {
-                                type: "conversation.item.create",
-                                item: {
-                                    type: "function_call_output",
-                                    role: "system",
-                                    output: answerMessage,
-                                }
-                            };
-                            openAiWs.send(JSON.stringify(functionOutputEvent));
-
-                            // Trigger AI to generate a response based on the function output
-                            openAiWs.send(JSON.stringify({
-                                type: "response.create",
-                                response: {
-                                    modalities: ["text", "audio"],
-                                    instructions: `Respond to the user's question "${question}" based on this information: ${answerMessage}. Be concise and friendly.`,
-                                }
-                            }));
-                        } catch (error) {
-                            console.error('Error processing question:', error);
-                            sendErrorResponse();
-                        }
-                    } else if (functionName === 'book_tow') {
-                        const address = args.address;
-                        try {
-                            const webhookResponse = await sendToWebhook({
-                                route: "4", // Route 4 for booking a tow
-                                data1: session.callerNumber,
-                                data2: address
-                            });
-
-                            // Parse the webhook response
-                            const parsedResponse = JSON.parse(webhookResponse);
-                            const bookingMessage = parsedResponse.message || "I'm sorry, I couldn't book the tow service at this time.";
-
-                            const functionOutputEvent = {
-                                type: "conversation.item.create",
-                                item: {
-                                    type: "function_call_output",
-                                    role: "system",
-                                    output: bookingMessage,
-                                }
-                            };
-                            openAiWs.send(JSON.stringify(functionOutputEvent));
-
-                            // Trigger AI to generate a response based on the function output
-                            openAiWs.send(JSON.stringify({
-                                type: "response.create",
-                                response: {
-                                    modalities: ["text", "audio"],
-                                    instructions: `Inform the user about the tow booking status: ${bookingMessage}. Be concise and friendly.`,
-                                }
-                            }));
-                        } catch (error) {
-                            console.error('Error booking tow:', error);
-                            sendErrorResponse();
-                        }
-                    }
                 }
 
                 // Log agent response
@@ -391,7 +290,7 @@ fastify.register(async (fastify) => {
                 // Log user transcription (input_audio_transcription.completed)
                 if (response.type === 'conversation.item.input_audio_transcription.completed' && response.transcript) {
                     const userMessage = response.transcript.trim();
-                    session.transcript += `User: ${userMessage}\n`;
+                    session.transcript += `User: ${userMessage}\n`; // Log user's message
                     console.log(`User (${sessionId}): ${userMessage}`);
                 }
 
@@ -431,17 +330,6 @@ fastify.register(async (fastify) => {
         openAiWs.on('error', (error) => {
             console.error('Error in the OpenAI WebSocket:', error);
         });
-
-        // Helper function for sending error responses
-        function sendErrorResponse() {
-            openAiWs.send(JSON.stringify({
-                type: "response.create",
-                response: {
-                    modalities: ["text", "audio"],
-                    instructions: "I apologize, but I'm having trouble processing your request right now. Is there anything else I can help you with?",
-                }
-            }));
-        }
     });
 });
 
@@ -459,19 +347,14 @@ async function sendToWebhook(payload) {
 
         console.log('Webhook response status:', response.status);
         if (response.ok) {
-            const responseText = await response.text();
-            console.log('Webhook response:', responseText);
-            return responseText;
+            console.log('Data successfully sent to webhook.');
         } else {
             console.error('Failed to send data to webhook:', response.statusText);
-            throw new Error('Webhook request failed');
         }
     } catch (error) {
         console.error('Error sending data to webhook:', error);
-        throw error;
     }
 }
-
 
 fastify.listen({ port: PORT }, (err) => {
     if (err) {

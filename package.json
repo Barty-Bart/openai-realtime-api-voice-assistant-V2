@@ -13,11 +13,13 @@
   "dependencies": {
     "@fastify/formbody": "^8.0.0",
     "@fastify/websocket": "^11.0.0",
+    "@openai/realtime-api-beta": "github:openai/openai-realtime-api-beta",
     "axios": "^1.4.0",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
     "form-data": "^4.0.0",
     "node-fetch": "^3.3.2",
+    "twilio": "^5.3.3",
     "ws": "^8.18.0"
   }
 }
