@@ -50,7 +50,7 @@ When a customer needs a tow:
 // Some default constants used throughout the application
 const VOICE = 'alloy';  // The voice for AI responses
 const PORT = process.env.PORT || 5050;  // Set the port for the server (from environment or default to 5050)
-const MAKE_WEBHOOK_URL = "https://hook.us1.make.com/6rbg9fy3b2corn2gqr6zys33jbd8x1xg";  // URL to Make.com webhook
+const MAKE_WEBHOOK_URL = "<your Make.com URL>";  // URL to Make.com webhook
 
 // Session management: Store session data for ongoing calls
 const sessions = new Map();  // A Map to hold session data for each call
